@@ -14,7 +14,9 @@ services:
       - db
 
   php:
-    image: php:8.1-fpm
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: books_php
     volumes:
       - ./:/var/www/html

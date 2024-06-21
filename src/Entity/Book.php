@@ -3,13 +3,71 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Post;
+use ApiPlatform\Metadata\Put;
+use App\Controller\BookController;
 use App\Repository\BookRepository;
 use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Validator\Constraints\Count;
+
+const BOOK_SCHEMA = [
+    'type' => 'object',
+    'properties' => [
+        'title' => ['type' => 'string'],
+        'description' => ['type' => 'string'],
+        'image' => ['type' => 'string', 'format' => 'base64'],
+        'authors' => [
+            'type' => 'array',
+            'items' => [
+                'type' => 'object',
+                'properties' => [
+                    'id' => ['type' => 'integer'],
+                    'name' => ['type' => 'string'],
+                    'surname' => ['type' => 'string'],
+                    'patronymic' => ['type' => 'string'],
+                ],
+                'required' => ['name', 'surname'],
+            ]
+        ],
+        'published_at' => ['type' => 'string', 'format' => 'date-time'],
+    ],
+    'required' => ['title', 'image', 'authors', 'published_at'],
+];
 
 #[ORM\Entity(repositoryClass: BookRepository::class)]
-#[ApiResource]
+#[ApiResource(operations: [
+    new Post(
+        controller: BookController::class,
+        openapiContext: [
+            'requestBody' => [
+                'content' => [
+                    'application/json' => [
+                        'schema' => BOOK_SCHEMA
+                    ],
+                ],
+            ],
+        ],
+        validationContext: ['groups' => ['book:create']],
+        deserialize: false,
+    ),
+    new Put(
+        controller: BookController::class,
+        openapiContext: [
+            'requestBody' => [
+                'content' => [
+                    'application/json' => [
+                        'schema' => BOOK_SCHEMA
+                    ],
+                ],
+            ],
+        ],
+        validationContext: ['groups' => ['book:update']],
+        deserialize: false,
+    ),
+])]
 #[ORM\HasLifecycleCallbacks]
 class Book
 {
@@ -28,7 +86,9 @@ class Book
     private ?string $image = null;
 
     #[ORM\ManyToMany(targetEntity: Author::class)]
-    private ArrayCollection $authors;
+    #[ORM\JoinTable(name: 'book_author')]
+    #[Count(min: 1, minMessage: 'At least one author must be specified')]
+    private Collection $authors;
 
     #[ORM\Column]
     private ?\DateTimeImmutable $published_at = null;
@@ -85,7 +145,7 @@ class Book
         return $this;
     }
 
-    public function getAuthors(): ArrayCollection
+    public function getAuthors(): Collection
     {
         return $this->authors;
     }

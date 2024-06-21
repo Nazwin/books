@@ -1,5 +1,6 @@
 .idea
 postgresql
+public/uploads
 ###> symfony/framework-bundle ###
 /.env.local
 /.env.local.php

@@ -3,6 +3,9 @@
 namespace App\Entity;
 
 use ApiPlatform\Metadata\ApiResource;
+use ApiPlatform\Metadata\Delete;
+use ApiPlatform\Metadata\Get;
+use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
 use App\Controller\BookController;
@@ -11,7 +14,9 @@ use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Annotation\Groups;
 use Symfony\Component\Validator\Constraints\Count;
+use Symfony\Component\Validator\Constraints\NotBlank;
 
 const BOOK_SCHEMA = [
     'type' => 'object',
@@ -23,6 +28,7 @@ const BOOK_SCHEMA = [
             'type' => 'array',
             'items' => [
                 'type' => 'object',
+                'minItems' => 1,
                 'properties' => [
                     'id' => ['type' => 'integer'],
                     'name' => ['type' => 'string'],
@@ -38,65 +44,84 @@ const BOOK_SCHEMA = [
 ];
 
 #[ORM\Entity(repositoryClass: BookRepository::class)]
-#[ApiResource(operations: [
-    new Post(
-        controller: BookController::class,
-        openapiContext: [
-            'requestBody' => [
-                'content' => [
-                    'application/json' => [
-                        'schema' => BOOK_SCHEMA
+#[ApiResource(
+    operations: [
+        new Get(),
+        new GetCollection(),
+        new Post(
+            controller: BookController::class,
+            openapiContext: [
+                'requestBody' => [
+                    'content' => [
+                        'application/json' => [
+                            'schema' => BOOK_SCHEMA
+                        ],
                     ],
                 ],
             ],
-        ],
-        validationContext: ['groups' => ['book:create']],
-        deserialize: false,
-    ),
-    new Put(
-        controller: BookController::class,
-        openapiContext: [
-            'requestBody' => [
-                'content' => [
-                    'application/json' => [
-                        'schema' => BOOK_SCHEMA
+            validationContext: ['groups' => ['book:create']],
+            deserialize: false,
+        ),
+        new Put(
+            controller: BookController::class,
+            openapiContext: [
+                'requestBody' => [
+                    'content' => [
+                        'application/json' => [
+                            'schema' => BOOK_SCHEMA
+                        ],
                     ],
                 ],
             ],
-        ],
-        validationContext: ['groups' => ['book:update']],
-        deserialize: false,
-    ),
-])]
+            validationContext: ['groups' => ['book:update']],
+            deserialize: false,
+        ),
+        new Delete,
+    ],
+    normalizationContext: ['groups' => ['book:read']],
+    denormalizationContext: ['groups' => ['book:write']],
+)]
 #[ORM\HasLifecycleCallbacks]
 class Book
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['book:read', 'book:write', 'author:read'])]
+    #[NotBlank]
     private ?string $title = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
+    #[Groups(['book:read', 'book:write', 'author:read'])]
     private ?string $description = null;
 
     #[ORM\Column(length: 255)]
+    #[NotBlank]
+    #[Groups(['book:read', 'book:write', 'author:read'])]
     private ?string $image = null;
 
     #[ORM\ManyToMany(targetEntity: Author::class)]
     #[ORM\JoinTable(name: 'book_author')]
+    #[Groups(['book:read', 'book:write'])]
+    #[NotBlank]
     #[Count(min: 1, minMessage: 'At least one author must be specified')]
     private Collection $authors;
 
     #[ORM\Column]
+    #[Groups(['book:read', 'book:write', 'author:read'])]
+    #[NotBlank]
     private ?\DateTimeImmutable $published_at = null;
 
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?\DateTimeImmutable $created_at = null;
 
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?\DateTimeImmutable $updated_at = null;
 
     public function __construct()

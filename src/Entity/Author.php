@@ -7,33 +7,48 @@ use App\Repository\AuthorRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Annotation\Groups;
+use Symfony\Component\Validator\Constraints\Length;
+use Symfony\Component\Validator\Constraints\NotBlank;
 
 #[ORM\Entity(repositoryClass: AuthorRepository::class)]
-#[ApiResource]
+#[ApiResource(
+    normalizationContext: ['groups' => ['author:read']],
+)]
 #[ORM\HasLifecycleCallbacks]
 class Author
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?int $id = null;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['book:read', 'author:read'])]
+    #[NotBlank]
     private ?string $name = null;
 
     #[ORM\Column(length: 255)]
+    #[Groups(['book:read', 'author:read'])]
+    #[NotBlank]
+    #[Length(min: 3, minMessage: 'Surname must be at least 3 characters')]
     private ?string $surname = null;
 
     #[ORM\Column(length: 255, nullable: true)]
+    #[Groups(['book:read', 'author:read'])]
     private ?string $patronymic = null;
 
     #[ORM\ManyToMany(targetEntity: Book::class, mappedBy: 'authors')]
+    #[Groups(['author:read'])]
     private Collection $books;
 
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?\DateTimeImmutable $created_at = null;
 
     #[ORM\Column]
+    #[Groups(['book:read', 'author:read'])]
     private ?\DateTimeImmutable $updated_at = null;
 
     public function __construct()

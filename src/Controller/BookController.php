@@ -11,6 +11,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 class BookController extends AbstractController
@@ -18,6 +19,7 @@ class BookController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly ValidatorInterface     $validator,
+        private readonly SerializerInterface    $serializer,
     )
     {
     }
@@ -52,23 +54,25 @@ class BookController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
-        $book = new Book();
-        $book->setTitle($data['title']);
-        $book->setDescription($data['description']);
-        $this->handleImageUpload($data['image'], $book);
-        $this->handleAuthors($data['authors'], $book);
-        $book->setPublishedAt(new \DateTimeImmutable($data['published_at']));
+        $data['authors'] = $data['authors'] ? $this->handleAuthors($data['authors']) : [];
 
-        $errors = $this->validator->validate($book, null, ['book:create']);
+        $book = $this->serializer->denormalize($data, Book::class, 'json', ['groups' => 'book:write']);
+
+        $errors = $this->validator->validate($book);
 
         if (count($errors) > 0) {
-            return new JsonResponse($errors, Response::HTTP_BAD_REQUEST);
+            $errorsSerialized = $this->serializer->serialize($errors, 'json');
+            return new JsonResponse(json_decode($errorsSerialized), Response::HTTP_UNPROCESSABLE_ENTITY);
         }
+
+        $this->handleImageUpload($data['image'], $book);
 
         $this->entityManager->persist($book);
         $this->entityManager->flush();
 
-        return new JsonResponse($book, Response::HTTP_CREATED);
+        $normalizedBook = $this->serializer->normalize($book, 'json', ['groups' => 'book:read']);
+
+        return new JsonResponse($normalizedBook, Response::HTTP_CREATED);
     }
 
     /**
@@ -78,30 +82,38 @@ class BookController extends AbstractController
     {
         $data = json_decode($request->getContent(), true);
 
+        $data['authors'] = $data['authors'] ? $this->handleAuthors($data['authors']) : [];
+
+        $errors = $this->validator->validate(
+            $this->serializer->denormalize($data, Book::class, 'json', ['groups' => 'book:write'])
+        );
+
+        if (count($errors) > 0) {
+            $errorsSerialized = $this->serializer->serialize($errors, 'json');
+            return new JsonResponse(json_decode($errorsSerialized), Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         $book->setTitle($data['title']);
         $book->setDescription($data['description']);
         $book->setPublishedAt(new \DateTimeImmutable($data['published_at']));
 
+        $book->getAuthors()->clear();
+        foreach ($data['authors'] as $authorData) {
+            $author = $this->entityManager->getRepository(Author::class)->find(basename($authorData));
+            $book->addAuthor($author);
+        }
+
         $image = $book->getImage();
-        $oldImage = null;
         if ($data['image'] !== $image) {
-            $oldImage = $image;
             $this->handleImageUpload($data['image'], $book);
-        }
-
-        $errors = $this->validator->validate($book, null, ['book:update']);
-
-        if (count($errors) > 0) {
-            return new JsonResponse($errors, Response::HTTP_BAD_REQUEST);
-        }
-
-        if ($oldImage) {
-            unlink($this->getParameter('images_directory') . '/' . $oldImage);
+            unlink($this->getParameter('images_directory') . '/' . $image);
         }
 
         $this->entityManager->flush();
 
-        return new JsonResponse($book, Response::HTTP_OK);
+        $normalizedBook = $this->serializer->normalize($book, 'json', ['groups' => 'book:read']);
+
+        return new JsonResponse($normalizedBook, Response::HTTP_OK);
     }
 
     private function handleImageUpload($base64Image, $book): void
@@ -130,46 +142,16 @@ class BookController extends AbstractController
         }
     }
 
-    private function handleAuthors($authors, $book): void
+    private function handleAuthors(array $authors): array
     {
-        if ($book->getId() !== null) {
-            $book->getAuthors()->clear();
-            foreach ($authors as $author) {
-                if ($author['id'] !== null) {
-                    $entityAuthor = $this->entityManager->getRepository(Author::class)->find($author['id']);
-                } else {
-                    $entityAuthor = $this->entityManager->getRepository(Author::class)->findOneBy([
-                        'name' => $author['name'],
-                        'surname' => $author['surname'],
-                        'patronymic' => $author['patronymic'] ?? null,
-                    ]);
-                }
-                if (!$entityAuthor) {
-                    $entityAuthor = new Author();
-                    $entityAuthor->setName($author['name']);
-                    $entityAuthor->setSurname($author['surname']);
-                    $entityAuthor->setPatronymic($author['patronymic'] ?? null);
-                    $this->entityManager->persist($entityAuthor);
-                }
-                $book->addAuthor($entityAuthor);
+        return array_filter(
+            array_map(function ($authorData) {
+                return isset($authorData['id']) ? "/api/authors/{$authorData['id']}" : null;
+            }, $authors),
+            function ($item) {
+                return $item !== null;
             }
-        } else {
-            foreach ($authors as $author) {
-                $entityAuthor = $this->entityManager->getRepository(Author::class)->findOneBy([
-                    'name' => $author['name'],
-                    'surname' => $author['surname'],
-                    'patronymic' => $author['patronymic'] ?? null,
-                ]);
-                if (!$entityAuthor) {
-                    $entityAuthor = new Author();
-                    $entityAuthor->setName($author['name']);
-                    $entityAuthor->setSurname($author['surname']);
-                    $entityAuthor->setPatronymic($author['patronymic'] ?? null);
-                    $this->entityManager->persist($entityAuthor);
-                }
-                $book->addAuthor($entityAuthor);
-            }
-        }
+        );
     }
 
     private function decodeBase64Image($base64Image): array|null
